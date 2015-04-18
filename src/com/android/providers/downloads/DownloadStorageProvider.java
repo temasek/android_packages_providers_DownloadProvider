@@ -12,6 +12,20 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
+ *
+ * Per article 5 of the Apache 2.0 License, some modifications to this code
+ * were made by the Oneplus Project.
+ *
+ * Modifications Copyright (C) 2015 The Oneplus Project
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation; either version 3
+ * of the License, or (at your option) any later version.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  */
 
 package com.android.providers.downloads;
@@ -29,6 +43,7 @@ import android.net.Uri;
 import android.os.Binder;
 import android.os.CancellationSignal;
 import android.os.Environment;
+import android.os.FileUtils;
 import android.os.ParcelFileDescriptor;
 import android.provider.DocumentsContract;
 import android.provider.DocumentsContract.Document;
@@ -142,6 +157,40 @@ public class DownloadStorageProvider extends DocumentsProvider {
     }
 
     @Override
+    public String renameDocument(String documentId, String displayName)
+            throws FileNotFoundException {
+
+        final File parent = Environment.getExternalStoragePublicDirectory(
+                Environment.DIRECTORY_DOWNLOADS);
+        parent.mkdirs();
+
+        // Delegate to real provider
+        final long token = Binder.clearCallingIdentity();
+        try {
+            final File before = new File(mDm.getPathForDownloadedFile(Long.parseLong(documentId)));
+            final File after = new File(before.getParentFile(), displayName);
+            if (after.exists()) {
+                throw new IllegalStateException("Already exists " + after);
+            }
+            if (!before.renameTo(after)) {
+                throw new IllegalStateException("Failed to rename to " + after);
+            }
+            String mimeType = null;
+            String extension = MimeTypeMap.getFileExtensionFromUrl(before.getAbsolutePath());
+            if (extension != null) {
+                MimeTypeMap mime = MimeTypeMap.getSingleton();
+                mimeType = mime.getMimeTypeFromExtension(extension);
+            }
+            mDm.remove(Long.parseLong(documentId));
+            return Long.toString(mDm.addCompletedDownload(
+                    after.getName(), after.getName(), true, mimeType, after.getAbsolutePath(), 0L,
+                    false, true));
+        } finally {
+            Binder.restoreCallingIdentity(token);
+        }
+    }
+
+    @Override
     public void deleteDocument(String docId) throws FileNotFoundException {
         // Delegate to real provider
         final long token = Binder.clearCallingIdentity();
@@ -149,6 +198,57 @@ public class DownloadStorageProvider extends DocumentsProvider {
             if (mDm.remove(Long.parseLong(docId)) != 1) {
                 throw new IllegalStateException("Failed to delete " + docId);
             }
+        } finally {
+            Binder.restoreCallingIdentity(token);
+        }
+    }
+
+    @Override
+    public String getPathDocument(String documentId) {
+        final File parent = Environment.getExternalStoragePublicDirectory(
+                Environment.DIRECTORY_DOWNLOADS);
+        parent.mkdirs();
+
+        // Delegate to real provider
+        final long token = Binder.clearCallingIdentity();
+        try {
+            return mDm.getPathForDownloadedFile(Long.parseLong(documentId));
+        } finally {
+            Binder.restoreCallingIdentity(token);
+        }
+    }
+
+    @Override
+    public boolean isChildDocument(String parentDocId, String docId) {
+        final File parent = Environment.getExternalStoragePublicDirectory(
+                Environment.DIRECTORY_DOWNLOADS);
+        parent.mkdirs();
+
+        // Delegate to real provider
+        final long token = Binder.clearCallingIdentity();
+        try {
+            String path = mDm.getPathForDownloadedFile(Long.parseLong(docId));
+            final File doc = new File(path).getCanonicalFile();
+            return FileUtils.contains(parent, doc);
+        } catch (IOException e) {
+            throw new IllegalArgumentException(
+                    "Failed to determine if " + docId + " is child of " + parentDocId + ": " + e);
+        } finally {
+            Binder.restoreCallingIdentity(token);
+        }
+    }
+
+    @Override
+    public boolean isDirectChildDocument(String parentDocumentId, String displayName) {
+        final File parent = Environment.getExternalStoragePublicDirectory(
+                Environment.DIRECTORY_DOWNLOADS);
+        parent.mkdirs();
+
+        // Delegate to real provider
+        final long token = Binder.clearCallingIdentity();
+        try {
+            final File doc = new File(parent, displayName);
+            return doc.exists();
         } finally {
             Binder.restoreCallingIdentity(token);
         }
@@ -284,7 +384,7 @@ public class DownloadStorageProvider extends DocumentsProvider {
         row.add(Document.COLUMN_DOCUMENT_ID, DOC_ID_ROOT);
         row.add(Document.COLUMN_MIME_TYPE, Document.MIME_TYPE_DIR);
         row.add(Document.COLUMN_FLAGS,
-                Document.FLAG_DIR_PREFERS_LAST_MODIFIED | Document.FLAG_DIR_SUPPORTS_CREATE);
+                Document.FLAG_DIR_PREFERS_LAST_MODIFIED);
     }
 
     private void includeDownloadFromCursor(MatrixCursor result, Cursor cursor) {
@@ -335,7 +435,8 @@ public class DownloadStorageProvider extends DocumentsProvider {
                 break;
         }
 
-        int flags = Document.FLAG_SUPPORTS_DELETE | Document.FLAG_SUPPORTS_WRITE;
+        int flags = Document.FLAG_SUPPORTS_DELETE | Document.FLAG_SUPPORTS_RENAME
+                | Document.FLAG_SUPPORTS_WRITE | Document.FLAG_SUPPORTS_COPY;
         if (mimeType != null && mimeType.startsWith("image/")) {
             flags |= Document.FLAG_SUPPORTS_THUMBNAIL;
         }
