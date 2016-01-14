@@ -21,8 +21,8 @@
     <item quantity="other"><xliff:g id="count">%d</xliff:g> s</item>
   </plurals>
   <plurals name="duration_minutes">
-    <item quantity="one"><xliff:g id="count">%d</xliff:g> m</item>
-    <item quantity="other"><xliff:g id="count">%d</xliff:g> m</item>
+    <item quantity="one"><xliff:g id="count">%d</xliff:g> min</item>
+    <item quantity="other"><xliff:g id="count">%d</xliff:g> mins</item>
   </plurals>
   <plurals name="duration_hours">
     <item quantity="one"><xliff:g id="count">%d</xliff:g> h</item>
